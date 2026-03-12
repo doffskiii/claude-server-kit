@@ -26,7 +26,13 @@
       "mcp__brain__send_telegram_question",
       "mcp__brain__check_telegram_answer",
       "mcp__brain__cancel_telegram_question",
-      "mcp__brain__semantic_search"
+      "mcp__brain__semantic_search",
+      "mcp__brain__get_today",
+      "mcp__brain__add_calendar_event",
+      "mcp__brain__list_calendar_events",
+      "mcp__brain__remove_calendar_event",
+      "mcp__brain__update_calendar_event",
+      "mcp__brain__queue_calendar_sync"
     ]
   }
 }

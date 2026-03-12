@@ -1,15 +1,11 @@
-"""Configuration for brain MCP server and monitoring daemon.
-
-All paths are configurable via environment variables with sensible defaults.
-"""
+"""Configuration for brain MCP server and monitoring daemon."""
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-# Vault — override with BRAIN_VAULT_PATH env var
-VAULT_PATH = Path(os.environ.get("BRAIN_VAULT_PATH", os.path.expanduser("~/vault")))
+# Vault
+VAULT_PATH = Path("/root/vault")
 
 # Git sync
 SYNC_DEBOUNCE = 30  # seconds — batch writes within this window
@@ -32,11 +28,8 @@ EMBEDDING_DIM = 384
 EMBEDDING_CHUNK_WORDS = 200
 EMBEDDING_INDEX_DIR = VAULT_PATH / ".brain"
 
-# Takopi config path (bot_token + chat_id) — override with TAKOPI_CONFIG env var
-TAKOPI_CONFIG = Path(os.environ.get("TAKOPI_CONFIG", os.path.expanduser("~/.takopi/takopi.toml")))
-
-# Groq API key file — override with GROQ_KEY_FILE env var
-GROQ_KEY_FILE = Path(os.environ.get("GROQ_KEY_FILE", os.path.expanduser("~/.groq-api-key.json")))
+# Takopi config path (bot_token + chat_id)
+TAKOPI_CONFIG = Path("/root/.takopi/takopi.toml")
 
 
 def get_telegram_config() -> tuple[str, int]:

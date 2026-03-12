@@ -32,12 +32,16 @@ def schedule_sync() -> None:
 
 
 def sync_vault() -> str:
-    """Full bidirectional sync: pull -> add -> commit -> push."""
+    """Full bidirectional sync: pull → add → commit → push.
+
+    Returns a short status string (for cron script / CLI usage).
+    """
     vault = str(VAULT_PATH)
     ts = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
     actions: list[str] = []
 
     try:
+        # 1. Pull remote changes (rebase to keep history clean)
         pull = subprocess.run(
             ["git", "pull", "--rebase", "--autostash"],
             cwd=vault, capture_output=True, text=True, timeout=30,
@@ -48,6 +52,7 @@ def sync_vault() -> str:
         if "Already up to date" not in pull.stdout:
             actions.append("pulled")
 
+        # 2. Check for local changes
         status = subprocess.run(
             ["git", "status", "--porcelain"],
             cwd=vault, capture_output=True, text=True, timeout=10,
@@ -57,11 +62,13 @@ def sync_vault() -> str:
                 return "ok: " + ", ".join(actions)
             return "ok: nothing to sync"
 
+        # 3. Stage all changes
         subprocess.run(
             ["git", "add", "-A"],
             cwd=vault, capture_output=True, timeout=10, check=True,
         )
 
+        # 4. Commit
         changed_files = len(status.stdout.strip().splitlines())
         subprocess.run(
             ["git", "commit", "-m", f"vault: auto-sync {ts} ({changed_files} files)"],
@@ -69,6 +76,7 @@ def sync_vault() -> str:
         )
         actions.append(f"committed {changed_files} files")
 
+        # 5. Push
         push = subprocess.run(
             ["git", "push"],
             cwd=vault, capture_output=True, text=True, timeout=30,

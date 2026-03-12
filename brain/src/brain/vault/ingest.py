@@ -9,10 +9,11 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from brain.config import VAULT_PATH, GROQ_KEY_FILE
+from brain.config import VAULT_PATH
 from brain.vault import frontmatter
 from brain.vault.tools import _trigger_sync, _trigger_embedding_update
 
+_GROQ_KEY_FILE = Path("/root/.groq-api-key.json")
 _GROQ_API_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 _GROQ_MODEL = "whisper-large-v3"
 
@@ -27,7 +28,6 @@ def _check_ingest_path(file_path: str) -> str | None:
         if pattern in lower:
             return f"Blocked: path '{file_path}' matches sensitive pattern '{pattern}'"
     return None
-
 # Groq limit: 25MB per request
 _GROQ_MAX_BYTES = 25 * 1024 * 1024
 # Audio longer than this (seconds) goes to Groq API; shorter stays local
@@ -36,10 +36,10 @@ _LOCAL_MAX_DURATION = 240  # 4 minutes
 
 def _get_groq_key() -> str | None:
     """Read Groq API key from config file."""
-    if not GROQ_KEY_FILE.exists():
+    if not _GROQ_KEY_FILE.exists():
         return None
     try:
-        data = json.loads(GROQ_KEY_FILE.read_text())
+        data = json.loads(_GROQ_KEY_FILE.read_text())
         return data.get("api_key")
     except Exception:
         return None
@@ -68,6 +68,7 @@ def _split_audio_for_groq(src: Path) -> list[Path]:
     if duration <= 0:
         return [src]
 
+    # Estimate how many chunks we need (target 20MB per chunk for safety)
     target_chunk_bytes = 20 * 1024 * 1024
     n_chunks = max(2, int(file_size / target_chunk_bytes) + 1)
     chunk_duration = duration / n_chunks
@@ -106,6 +107,7 @@ def _transcribe_groq(src: Path, api_key: str) -> tuple[str, str]:
                 files={"file": (chunk_path.name, f, "audio/mpeg")},
                 data={
                     "model": _GROQ_MODEL,
+                    "language": "ru",
                     "response_format": "verbose_json",
                 },
                 timeout=120.0,
@@ -168,8 +170,15 @@ def _transcribe_local(src: Path) -> tuple[str, float, str]:
 def vault_ingest_audio(file_path: str, title: str = "") -> str:
     """Transcribe an audio file and save to the vault.
 
-    Routing: <=4min -> local faster-whisper (CPU), >4min -> Groq API.
+    Routing: <=4min → local faster-whisper (CPU), >4min → Groq API.
     Falls back between backends on failure.
+
+    Args:
+        file_path: Absolute path to the audio file.
+        title: Optional title (defaults to filename).
+
+    Returns:
+        Path to the created vault document.
     """
     blocked = _check_ingest_path(file_path)
     if blocked:
@@ -184,20 +193,24 @@ def vault_ingest_audio(file_path: str, title: str = "") -> str:
     use_groq = groq_key and duration > _LOCAL_MAX_DURATION
 
     if use_groq:
+        # Long audio → Groq API (fast, Whisper large-v3)
         try:
             full_text, language = _transcribe_groq(src, groq_key)
             model_used = f"groq/{_GROQ_MODEL}"
         except Exception as e:
+            # Fallback to local on Groq failure
             try:
                 full_text, duration, language = _transcribe_local(src)
                 model_used = "whisper-base (fallback)"
             except ImportError:
                 return f"Groq API failed ({e}) and faster-whisper not installed."
     else:
+        # Short audio → local faster-whisper
         try:
             full_text, duration, language = _transcribe_local(src)
             model_used = "whisper-base"
         except ImportError:
+            # No local whisper — try Groq as fallback
             if groq_key:
                 try:
                     full_text, language = _transcribe_groq(src, groq_key)
@@ -228,6 +241,7 @@ def vault_ingest_audio(file_path: str, title: str = "") -> str:
     body = f"## Transcript\n\n{full_text}"
     content = frontmatter.render(meta, body)
 
+    # Save
     rel_path = f"audio/{subdir}/{slug}.md"
     dest = VAULT_PATH / rel_path
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -239,7 +253,16 @@ def vault_ingest_audio(file_path: str, title: str = "") -> str:
 
 
 def vault_ingest_document(file_path: str, title: str = "", chunk_size: int = 2000) -> str:
-    """Process a text/PDF document and save to the vault as chunks."""
+    """Process a text/PDF document and save to the vault as chunks.
+
+    Args:
+        file_path: Absolute path to the document.
+        title: Optional title.
+        chunk_size: Approximate tokens per chunk.
+
+    Returns:
+        Path to the created vault document(s).
+    """
     blocked = _check_ingest_path(file_path)
     if blocked:
         return blocked
@@ -248,6 +271,7 @@ def vault_ingest_document(file_path: str, title: str = "", chunk_size: int = 200
     if not src.exists():
         return f"File not found: {file_path}"
 
+    # Read content based on file type
     suffix = src.suffix.lower()
     if suffix == ".pdf":
         text = _read_pdf(src)
@@ -262,6 +286,7 @@ def vault_ingest_document(file_path: str, title: str = "", chunk_size: int = 200
     doc_title = title or _slugify(src.stem)
     slug = _slugify(doc_title)
 
+    # Split into chunks
     words = text.split()
     chunks: list[str] = []
     for i in range(0, len(words), chunk_size):
@@ -269,6 +294,7 @@ def vault_ingest_document(file_path: str, title: str = "", chunk_size: int = 200
         chunks.append(chunk)
 
     if len(chunks) == 1:
+        # Single file, no chunking needed
         meta = frontmatter.make_meta(
             doc_title,
             tags=["document"],
@@ -284,10 +310,11 @@ def vault_ingest_document(file_path: str, title: str = "", chunk_size: int = 200
         _trigger_embedding_update(rel_path)
         return f"Saved: {rel_path} ({len(words)} words)"
 
-    # Multiple chunks
+    # Multiple chunks — create directory with overview + chunks
     base_dir = VAULT_PATH / "documents" / slug
     base_dir.mkdir(parents=True, exist_ok=True)
 
+    # Overview file
     overview_meta = frontmatter.make_meta(
         doc_title,
         tags=["document", "overview"],
@@ -302,6 +329,7 @@ def vault_ingest_document(file_path: str, title: str = "", chunk_size: int = 200
     overview = frontmatter.render(overview_meta, overview_body)
     (base_dir / "_overview.md").write_text(overview, encoding="utf-8")
 
+    # Chunk files
     for i, chunk in enumerate(chunks):
         chunk_meta = frontmatter.make_meta(
             f"{doc_title} — Part {i+1}",
@@ -316,6 +344,7 @@ def vault_ingest_document(file_path: str, title: str = "", chunk_size: int = 200
         (base_dir / f"chunk-{i+1:03d}.md").write_text(chunk_content, encoding="utf-8")
 
     _trigger_sync()
+    # Trigger embedding update for overview + all chunks
     _trigger_embedding_update(f"documents/{slug}/_overview.md")
     for i in range(len(chunks)):
         _trigger_embedding_update(f"documents/{slug}/chunk-{i+1:03d}.md")
@@ -323,8 +352,9 @@ def vault_ingest_document(file_path: str, title: str = "", chunk_size: int = 200
 
 
 def _read_pdf(path: Path) -> str:
-    """Extract text from PDF using pdftotext."""
+    """Extract text from PDF. Falls back to raw read."""
     try:
+        import subprocess
         result = subprocess.run(
             ["pdftotext", "-layout", str(path), "-"],
             capture_output=True, text=True, timeout=30,
@@ -333,6 +363,8 @@ def _read_pdf(path: Path) -> str:
             return result.stdout
     except Exception:
         pass
+
+    # Fallback: try to read as text
     try:
         return path.read_text(encoding="utf-8", errors="replace")
     except Exception:

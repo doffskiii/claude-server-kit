@@ -8,17 +8,16 @@ every 5 minutes. Sends alerts through takopi's bot token.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import httpx
 import psutil
 
 # Add brain to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, "/root/brain/src")
 
 from brain.config import (
     ALERT_COOLDOWN,
@@ -32,7 +31,7 @@ from brain.config import (
 
 # State
 _cpu_high_count = 0
-_last_alerts: dict[str, float] = {}
+_last_alerts: dict[str, float] = {}  # alert_key -> timestamp
 
 
 def send_alert(bot_token: str, chat_id: int, message: str) -> None:
@@ -59,6 +58,7 @@ def should_alert(key: str) -> bool:
 
 
 def check_cpu() -> str | None:
+    """Check CPU usage. Alert after N consecutive high readings."""
     global _cpu_high_count
     cpu = psutil.cpu_percent(interval=2)
     if cpu > CPU_THRESHOLD:
@@ -75,6 +75,7 @@ def check_cpu() -> str | None:
 
 
 def check_ram() -> str | None:
+    """Check available RAM."""
     mem = psutil.virtual_memory()
     available_gb = mem.available / (1024 ** 3)
     if available_gb < RAM_MIN_AVAILABLE_GB and should_alert("ram"):
@@ -88,6 +89,7 @@ def check_ram() -> str | None:
 
 
 def check_disk() -> str | None:
+    """Check disk usage."""
     disk = psutil.disk_usage("/")
     if disk.percent > DISK_THRESHOLD and should_alert("disk"):
         return (
@@ -99,7 +101,12 @@ def check_disk() -> str | None:
     return None
 
 
+_pm2_down_counts: dict[str, int] = {}  # name -> consecutive non-online checks
+PM2_CONSECUTIVE = 2  # alert after N consecutive failures (skip transient restarts)
+
+
 def check_pm2() -> list[str]:
+    """Check PM2 process health. Skips transient failures (timeouts, brief restarts)."""
     alerts = []
     try:
         result = subprocess.run(
@@ -107,23 +114,33 @@ def check_pm2() -> list[str]:
             capture_output=True, text=True, timeout=10,
         )
         procs = json.loads(result.stdout)
+        seen = set()
         for p in procs:
             name = p.get("name", "?")
+            seen.add(name)
             status = p.get("pm2_env", {}).get("status", "?")
-            if status != "online" and should_alert(f"pm2_{name}"):
-                restarts = p.get("pm2_env", {}).get("restart_time", 0)
-                alerts.append(
-                    f"*PM2 Alert*\n"
-                    f"Process `{name}` is *{status}*\n"
-                    f"Restarts: {restarts}"
-                )
+            if status != "online":
+                _pm2_down_counts[name] = _pm2_down_counts.get(name, 0) + 1
+                if _pm2_down_counts[name] >= PM2_CONSECUTIVE and should_alert(f"pm2_{name}"):
+                    restarts = p.get("pm2_env", {}).get("restart_time", 0)
+                    alerts.append(
+                        f"*PM2 Alert*\n"
+                        f"Process `{name}` is *{status}*\n"
+                        f"Restarts: {restarts}"
+                    )
+            else:
+                _pm2_down_counts.pop(name, None)
+        # Clean up processes no longer in PM2
+        for gone in set(_pm2_down_counts) - seen:
+            _pm2_down_counts.pop(gone, None)
     except Exception as e:
-        if should_alert("pm2_error"):
-            alerts.append(f"*PM2 Alert*\nCannot read PM2 status: {e}")
+        # PM2 jlist timeout/error — transient, skip alert (will retry next cycle)
+        print(f"[monitor] PM2 check failed (transient, no alert): {e}", flush=True)
     return alerts
 
 
 def run_check(bot_token: str, chat_id: int) -> None:
+    """Run all checks and send alerts."""
     alerts = []
 
     cpu_alert = check_cpu()
@@ -142,12 +159,13 @@ def run_check(bot_token: str, chat_id: int) -> None:
     alerts.extend(pm2_alerts)
 
     for alert in alerts:
-        ts = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        ts = datetime.now(timezone(timedelta(hours=3))).strftime("%H:%M MSK")
         send_alert(bot_token, chat_id, f"{alert}\n\n_{ts}_")
         print(f"[monitor] Alert sent: {alert[:60]}...", flush=True)
 
 
 def main() -> None:
+    """Main loop — run checks every MONITOR_INTERVAL seconds."""
     print("[monitor] Starting server monitor daemon", flush=True)
 
     bot_token, chat_id = get_telegram_config()
@@ -159,6 +177,7 @@ def main() -> None:
     )
     print(f"[monitor] Check interval: {MONITOR_INTERVAL}s, cooldown: {ALERT_COOLDOWN}s", flush=True)
 
+    # Send startup notification
     send_alert(bot_token, chat_id, "*Server Monitor* started\nChecking every 5 min.")
 
     while True:

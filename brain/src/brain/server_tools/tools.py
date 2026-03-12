@@ -11,13 +11,19 @@ from brain.config import VAULT_PATH
 
 
 def server_status() -> str:
-    """Get current server resource usage."""
+    """Get current server resource usage.
+
+    Returns:
+        Formatted report: CPU, RAM, disk, PM2 processes.
+    """
     lines = []
 
+    # CPU
     cpu_percent = psutil.cpu_percent(interval=1)
     cpu_count = psutil.cpu_count()
     lines.append(f"## CPU\n{cpu_percent}% used, {cpu_count} cores")
 
+    # RAM
     mem = psutil.virtual_memory()
     lines.append(
         f"\n## RAM\n"
@@ -27,6 +33,7 @@ def server_status() -> str:
         f"Usage: {mem.percent}%"
     )
 
+    # Disk
     disk = psutil.disk_usage("/")
     lines.append(
         f"\n## Disk\n"
@@ -36,6 +43,7 @@ def server_status() -> str:
         f"Usage: {disk.percent}%"
     )
 
+    # PM2 processes
     try:
         result = subprocess.run(
             ["pm2", "jlist"],
@@ -60,8 +68,12 @@ def server_status() -> str:
 
 
 def server_map() -> str:
-    """Get the server map — what services exist, where data is stored."""
+    """Get the server map — what services exist, where data is stored.
+
+    Returns:
+        Content of _server-map.md from the vault.
+    """
     map_path = VAULT_PATH / "_server-map.md"
     if map_path.exists():
         return map_path.read_text(encoding="utf-8")
-    return "Server map not generated yet. Use write_vault to create _server-map.md."
+    return "Server map not generated yet. Use vault_write to create _server-map.md."

@@ -32,13 +32,17 @@ _SKIP_DIRS = {".brain", ".obsidian", ".git", "templates"}
 _lock = threading.Lock()
 
 # Lazy-loaded model state
-_session = None
-_tokenizer = None
+_session = None  # onnxruntime.InferenceSession
+_tokenizer = None  # tokenizers.Tokenizer
 
 # In-memory index
-_embeddings: np.ndarray | None = None
-_metadata: dict | None = None
+_embeddings: np.ndarray | None = None  # (N, 384)
+_metadata: dict | None = None  # {"version", "model", "chunks": [...]}
 
+
+# ---------------------------------------------------------------------------
+# Model loading
+# ---------------------------------------------------------------------------
 
 def _ensure_model() -> None:
     """Lazy-load ONNX model and tokenizer on first use."""
@@ -54,6 +58,7 @@ def _ensure_model() -> None:
     log.info("Loading embedding model %s ...", EMBEDDING_MODEL)
     t0 = time.time()
 
+    # Download ONNX model + tokenizer from HuggingFace cache
     model_path = hf_hub_download(EMBEDDING_MODEL, "onnx/model.onnx")
     tokenizer_path = hf_hub_download(EMBEDDING_MODEL, "tokenizer.json")
 
@@ -67,6 +72,10 @@ def _ensure_model() -> None:
 
     log.info("Model loaded in %.1fs", time.time() - t0)
 
+
+# ---------------------------------------------------------------------------
+# Encoding
+# ---------------------------------------------------------------------------
 
 def _encode(texts: list[str]) -> np.ndarray:
     """Encode texts into normalized embeddings. Returns (N, 384) float32."""
@@ -87,8 +96,8 @@ def _encode(texts: list[str]) -> np.ndarray:
         },
     )
 
-    # Mean pooling over token embeddings
-    token_embeddings = outputs[0]
+    # Mean pooling over token embeddings (output[0] = last_hidden_state)
+    token_embeddings = outputs[0]  # (batch, seq_len, dim)
     mask_expanded = attention_mask[:, :, np.newaxis].astype(np.float32)
     sum_embeddings = (token_embeddings * mask_expanded).sum(axis=1)
     sum_mask = mask_expanded.sum(axis=1).clip(min=1e-9)
@@ -99,8 +108,16 @@ def _encode(texts: list[str]) -> np.ndarray:
     return (embeddings / norms).astype(np.float32)
 
 
+# ---------------------------------------------------------------------------
+# Chunking
+# ---------------------------------------------------------------------------
+
 def _chunk_document(text: str, meta: dict, rel_path: str) -> list[tuple[str, dict]]:
-    """Split document into chunks of ~EMBEDDING_CHUNK_WORDS words."""
+    """Split document into chunks of ~EMBEDDING_CHUNK_WORDS words.
+
+    Returns list of (chunk_text, chunk_metadata).
+    """
+    # Strip frontmatter — we only embed the body
     _, body = frontmatter.parse(text)
     if not body.strip():
         return []
@@ -116,6 +133,7 @@ def _chunk_document(text: str, meta: dict, rel_path: str) -> list[tuple[str, dic
             continue
         words = para.split()
         if current_words and len(current_words) + len(words) > EMBEDDING_CHUNK_WORDS:
+            # Flush current chunk
             chunk_text = "\n\n".join(current_text_parts)
             chunks.append((chunk_text, {
                 "path": rel_path,
@@ -130,6 +148,7 @@ def _chunk_document(text: str, meta: dict, rel_path: str) -> list[tuple[str, dic
         current_words.extend(words)
         current_text_parts.append(para)
 
+    # Flush remaining
     if current_text_parts:
         chunk_text = "\n\n".join(current_text_parts)
         chunks.append((chunk_text, {
@@ -141,11 +160,16 @@ def _chunk_document(text: str, meta: dict, rel_path: str) -> list[tuple[str, dic
             "preview": chunk_text[:150].replace("\n", " "),
         }))
 
+    # Set total_chunks
     for _, cm in chunks:
         cm["total_chunks"] = len(chunks)
 
     return chunks
 
+
+# ---------------------------------------------------------------------------
+# Vault scanning
+# ---------------------------------------------------------------------------
 
 def _scan_vault() -> list[tuple[Path, float]]:
     """Walk vault for all .md files. Returns (path, mtime) pairs."""
@@ -161,8 +185,12 @@ def _scan_vault() -> list[tuple[Path, float]]:
     return results
 
 
+# ---------------------------------------------------------------------------
+# Index persistence
+# ---------------------------------------------------------------------------
+
 def _load_index() -> bool:
-    """Load index from disk into memory."""
+    """Load index from disk into memory. Returns True if loaded."""
     global _embeddings, _metadata
 
     if not EMBEDDINGS_FILE.exists() or not METADATA_FILE.exists():
@@ -184,6 +212,7 @@ def _save_index() -> None:
     """Persist current in-memory index to disk (atomic write)."""
     EMBEDDING_INDEX_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Atomic write — write to temp, then rename
     tmp_emb = EMBEDDINGS_FILE.with_suffix(".tmp.npz")
     tmp_meta = METADATA_FILE.with_suffix(".tmp.json")
 
@@ -197,10 +226,15 @@ def _save_index() -> None:
         tmp_meta.rename(METADATA_FILE)
     except Exception as e:
         log.error("Failed to save index: %s", e)
+        # Clean up temp files
         for f in (tmp_emb, tmp_meta):
             if f.exists():
                 f.unlink()
 
+
+# ---------------------------------------------------------------------------
+# Index building
+# ---------------------------------------------------------------------------
 
 def build_index(force: bool = False) -> int:
     """Full index rebuild. Returns number of chunks indexed."""
@@ -234,6 +268,7 @@ def build_index(force: bool = False) -> int:
             _save_index()
             return 0
 
+        # Encode in batches to avoid OOM
         batch_size = 64
         encoded_parts = []
         for i in range(0, len(all_texts), batch_size):
@@ -252,7 +287,7 @@ def build_index(force: bool = False) -> int:
 
 
 def _check_staleness() -> list[str]:
-    """Compare index mtimes against actual file mtimes."""
+    """Compare index mtimes against actual file mtimes. Return stale paths."""
     if _metadata is None:
         return []
 
@@ -272,6 +307,7 @@ def _check_staleness() -> list[str]:
         if rel not in indexed or indexed[rel] < mtime:
             stale.append(rel)
 
+    # Detect deleted files
     for indexed_path in indexed:
         if indexed_path not in current_paths:
             stale.append(indexed_path)
@@ -288,6 +324,7 @@ def _update_paths(stale_paths: list[str]) -> int:
 
     stale_set = set(stale_paths)
 
+    # Remove old chunks for stale paths
     keep_indices = [
         i for i, c in enumerate(_metadata["chunks"])
         if c["path"] not in stale_set
@@ -300,13 +337,14 @@ def _update_paths(stale_paths: list[str]) -> int:
         new_embeddings = np.zeros((0, EMBEDDING_DIM), dtype=np.float32)
         new_chunks = []
 
+    # Add new chunks for paths that still exist
     new_texts: list[str] = []
     new_meta: list[dict] = []
 
     for rel_path in stale_paths:
         full_path = VAULT_PATH / rel_path
         if not full_path.exists():
-            continue
+            continue  # deleted file — just remove from index
 
         try:
             content = full_path.read_text(encoding="utf-8")
@@ -334,6 +372,10 @@ def _update_paths(stale_paths: list[str]) -> int:
     return len(new_texts)
 
 
+# ---------------------------------------------------------------------------
+# Search
+# ---------------------------------------------------------------------------
+
 def search(query: str, top_k: int = 10, folder: str = "", tags: str = "") -> str:
     """Semantic search over vault. Returns formatted results string."""
     global _embeddings, _metadata
@@ -341,6 +383,7 @@ def search(query: str, top_k: int = 10, folder: str = "", tags: str = "") -> str
     with _lock:
         _ensure_model()
 
+        # Load or build index
         if _embeddings is None:
             if not _load_index():
                 log.info("No index found, building...")
@@ -348,18 +391,22 @@ def search(query: str, top_k: int = 10, folder: str = "", tags: str = "") -> str
                 if count == 0:
                     return "Vault is empty — nothing to search."
 
+        # Check for stale entries and update
         stale = _check_staleness()
         if stale:
             _update_paths(stale)
 
-    query_vec = _encode([query])
+    # Encode query (no lock needed — model is thread-safe for inference)
+    query_vec = _encode([query])  # (1, 384)
 
     with _lock:
         if _embeddings is None or len(_embeddings) == 0:
             return "Index is empty."
 
-        scores = (_embeddings @ query_vec.T).squeeze()
+        # Cosine similarity (embeddings are already normalized)
+        scores = (_embeddings @ query_vec.T).squeeze()  # (N,)
 
+        # Apply filters
         tag_filter = {t.strip() for t in tags.split(",") if t.strip()} if tags else set()
         folder_prefix = folder.rstrip("/") + "/" if folder else ""
 
@@ -377,9 +424,11 @@ def search(query: str, top_k: int = 10, folder: str = "", tags: str = "") -> str
             f" in folder '{folder}'" if folder else ""
         ) + (f" with tags [{tags}]" if tags else "")
 
+    # Sort by score descending, take top_k
     candidates.sort(key=lambda x: x[0], reverse=True)
     top = candidates[:top_k]
 
+    # Format output
     lines = [f"## Semantic Search: \"{query}\"\n"]
     for rank, (score, idx) in enumerate(top, 1):
         chunk = _metadata["chunks"][idx]
@@ -396,6 +445,10 @@ def search(query: str, top_k: int = 10, folder: str = "", tags: str = "") -> str
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Single document update (called from write_vault hook)
+# ---------------------------------------------------------------------------
+
 def update_single_document(vault_path: str) -> None:
     """Re-index a single document after write. Thread-safe."""
     try:
@@ -404,6 +457,7 @@ def update_single_document(vault_path: str) -> None:
         with _lock:
             if _embeddings is None:
                 if not _load_index():
+                    # No index yet — skip, will build on first search
                     return
 
             _update_paths([vault_path])

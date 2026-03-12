@@ -8,6 +8,10 @@ from brain.vault.tools import vault_search, vault_read, vault_write, vault_list,
 from brain.vault.ingest import vault_ingest_audio, vault_ingest_document
 from brain.vault.embeddings import search as vault_semantic_search
 from brain.server_tools.tools import server_status, server_map
+from brain.calendar.tools import (
+    calendar_get_today, calendar_add_event, calendar_list_events,
+    calendar_remove_event, calendar_update_event, calendar_queue_sync,
+)
 
 mcp = FastMCP("brain", instructions=(
     "Brain is the server's knowledge management system. "
@@ -25,7 +29,7 @@ def search_vault(query: str, folder: str = "", tags: str = "") -> str:
     Args:
         query: Search text or regex pattern.
         folder: Limit to subfolder (e.g. "knowledge/projects", "audio").
-        tags: Comma-separated tags to filter (e.g. "project,myapp").
+        tags: Comma-separated tags to filter (e.g. "project,takopi").
     """
     return vault_search(query, folder, tags)
 
@@ -51,7 +55,7 @@ def read_vault(path: str) -> str:
     """Read a document from the Obsidian vault.
 
     Args:
-        path: Vault-relative path (e.g. "knowledge/projects/myapp.md").
+        path: Vault-relative path (e.g. "knowledge/projects/takopi.md").
     """
     return vault_read(path)
 
@@ -129,8 +133,6 @@ def ingest_document(file_path: str, title: str = "", chunk_size: int = 2000) -> 
 
 
 # --- Telegram Q&A bridge ---
-# These tools communicate with Takopi's ask server (port 9877)
-# to enable dual-channel questioning (VS Code + Telegram).
 
 @mcp.tool()
 def ask_via_telegram(question: str, options: str = "") -> str:
@@ -258,6 +260,93 @@ def cancel_telegram_question(question_id: str) -> str:
     if data.get("status") == "not_found":
         return "Question not found (expired or invalid ID)."
     return f"Unexpected: {data}"
+
+
+# --- Calendar tools ---
+
+@mcp.tool()
+def get_today() -> str:
+    """Get current date, day of week, week number, and weekly calendar with events.
+
+    Call this BEFORE writing any dates in tasks, notes, or messages.
+    Returns today's info + this week + next week with any scheduled events.
+    """
+    return calendar_get_today()
+
+
+@mcp.tool()
+def add_calendar_event(title: str, date: str, time: str = "",
+                       end_date: str = "", project: str = "", notes: str = "",
+                       source_type: str = "", source_id: str = "") -> str:
+    """Add an event or deadline to the calendar.
+
+    Args:
+        title: Event title (e.g. "Team standup", "Deploy v2 deadline").
+        date: Date in YYYY-MM-DD or DD.MM.YYYY or DD.MM format.
+        time: Optional time in HH:MM format.
+        end_date: Optional end date for multi-day events.
+        project: Project tag (e.g. "myproject", "brain", "content").
+        notes: Additional notes.
+        source_type: Source system (e.g. "task_file", "trello", "manual").
+        source_id: Task ID in source system (e.g. "task_42", card ID).
+    """
+    return calendar_add_event(title, date, time, end_date, project, notes, source_type, source_id)
+
+
+@mcp.tool()
+def list_calendar_events(from_date: str = "", to_date: str = "", project: str = "") -> str:
+    """List calendar events in a date range.
+
+    Args:
+        from_date: Start date (default: today). YYYY-MM-DD or DD.MM.YYYY.
+        to_date: End date (default: 30 days from start).
+        project: Filter by project tag.
+    """
+    return calendar_list_events(from_date, to_date, project)
+
+
+@mcp.tool()
+def remove_calendar_event(event_id: str = "", title: str = "") -> str:
+    """Remove a calendar event by ID or title substring.
+
+    Args:
+        event_id: Event ID number (from list_calendar_events).
+        title: Title substring to match and remove.
+    """
+    return calendar_remove_event(event_id, title)
+
+
+@mcp.tool()
+def update_calendar_event(event_id: str, title: str = "", date: str = "",
+                          time: str = "", project: str = "", notes: str = "") -> str:
+    """Update an existing calendar event.
+
+    Args:
+        event_id: Event ID to update.
+        title: New title (optional).
+        date: New date (optional).
+        time: New time (optional).
+        project: New project tag (optional).
+        notes: New notes (optional).
+    """
+    return calendar_update_event(event_id, title, date, time, project, notes)
+
+
+@mcp.tool()
+def queue_calendar_sync(event_id: str, action: str, new_date: str = "",
+                        new_title: str = "") -> str:
+    """Queue a sync action for a calendar event (processed by hourly cron).
+
+    Use when completing or rescheduling a task that has a linked calendar event.
+    The cron job will process the queue and update/remove the event.
+
+    Args:
+        event_id: Calendar event ID to sync.
+        action: "remove" (task done) or "update" (deadline changed).
+        new_date: New date if action is "update" (YYYY-MM-DD).
+        new_title: New title if action is "update".
+    """
+    return calendar_queue_sync(event_id, action, new_date, new_title)
 
 
 # --- Server tools ---

@@ -40,7 +40,16 @@ def _resolve_folder(folder: str) -> Path:
 
 
 def vault_search(query: str, folder: str = "", tags: str = "") -> str:
-    """Full-text search across the vault."""
+    """Full-text search across the vault.
+
+    Args:
+        query: Search string (supports regex).
+        folder: Limit search to a subfolder (e.g. "knowledge/projects").
+        tags: Comma-separated tags to filter by (e.g. "project,takopi").
+
+    Returns:
+        Matching snippets with file paths and line numbers.
+    """
     try:
         search_path = _resolve_folder(folder)
     except ValueError as e:
@@ -91,7 +100,14 @@ def vault_search(query: str, folder: str = "", tags: str = "") -> str:
 
 
 def vault_read(path: str) -> str:
-    """Read a document from the vault."""
+    """Read a document from the vault.
+
+    Args:
+        path: Vault-relative path (e.g. "knowledge/projects/takopi.md").
+
+    Returns:
+        Full file content including frontmatter.
+    """
     p = _resolve(path)
     if not p.exists():
         return f"File not found: {path}"
@@ -107,7 +123,20 @@ def vault_write(
     tags: str = "",
     source: str = "",
 ) -> str:
-    """Create or update a document in the vault."""
+    """Create or update a document in the vault.
+
+    Automatically adds YAML frontmatter if not present.
+
+    Args:
+        path: Vault-relative path (e.g. "inbox/my-note.md").
+        content: Markdown content (body only, frontmatter added automatically).
+        title: Document title (defaults to filename).
+        tags: Comma-separated tags.
+        source: Source identifier (e.g. "voice_message", "pdf", "manual").
+
+    Returns:
+        Confirmation with path.
+    """
     p = _resolve(path)
     p.parent.mkdir(parents=True, exist_ok=True)
 
@@ -133,7 +162,15 @@ def vault_write(
 
 
 def vault_list(folder: str = "", tags: str = "") -> str:
-    """List documents in the vault."""
+    """List documents in the vault.
+
+    Args:
+        folder: Subfolder to list (e.g. "knowledge/projects"). Empty = root.
+        tags: Comma-separated tags to filter by.
+
+    Returns:
+        List of files with titles and tags.
+    """
     try:
         search_path = _resolve_folder(folder)
     except ValueError as e:
@@ -180,7 +217,19 @@ def vault_list(folder: str = "", tags: str = "") -> str:
 
 
 def vault_update_dashboard(action: str, task: str, project: str = "", date: str = "") -> str:
-    """Safely update dashboard.md without overwriting existing data."""
+    """Safely update dashboard.md without overwriting existing data.
+
+    Parses the existing file, applies the requested change, writes back.
+
+    Args:
+        action: One of "add", "complete", "remove".
+        task: Task description (for "add") or substring to match (for "complete"/"remove").
+        project: Project tag, e.g. "brain", "myapp" (required for "add").
+        date: Date string, defaults to today (YYYY-MM-DD).
+
+    Returns:
+        Confirmation of what was changed.
+    """
     from datetime import datetime as _dt
 
     if action not in ("add", "complete", "remove"):
@@ -217,10 +266,12 @@ def vault_update_dashboard(action: str, task: str, project: str = "", date: str 
         if not project:
             return "Project is required for 'add' action."
         new_line = f"- [ ] **[{project}]** {task} ({date})"
+        # Add after existing active items (skip empty lines at start)
         active_lines.append(new_line)
         result_msg = f"Added to active: [{project}] {task}"
 
     elif action == "complete":
+        # Find matching active task
         found_idx = -1
         found_line = ""
         task_lower = task.lower()
@@ -233,8 +284,12 @@ def vault_update_dashboard(action: str, task: str, project: str = "", date: str 
         if found_idx == -1:
             return f"No active task matching '{task}' found."
 
+        # Extract task text from the line
+        # Format: - [ ] **[Project]** Description (date)
         active_lines.pop(found_idx)
+        # Convert to completed format
         completed_entry = found_line.replace("- [ ]", "- [x]").rstrip()
+        # Remove old date and add completion date
         import re
         completed_entry = re.sub(r"\(\d{4}-\d{2}-\d{2}\)\s*$", "", completed_entry).rstrip()
         completed_entry += f" (done: {date})"
@@ -258,6 +313,7 @@ def vault_update_dashboard(action: str, task: str, project: str = "", date: str 
     # Rebuild file
     new_lines = lines[:active_start + 1]
     new_lines.extend(active_lines)
+    # Ensure blank line before Completed
     if new_lines and new_lines[-1].strip():
         new_lines.append("")
     new_lines.append("## Completed")

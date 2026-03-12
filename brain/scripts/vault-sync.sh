@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # Vault git sync — runs via cron every 5 minutes.
-# Pull remote -> commit local changes -> push.
+# Pull remote → commit local changes → push.
 
 set -euo pipefail
 
-VAULT="${BRAIN_VAULT_PATH:-$HOME/vault}"
-LOG="${BRAIN_DIR:-$(dirname "$0")/..}/logs/vault-sync.log"
+VAULT="/root/vault"
+LOG="/root/brain/logs/vault-sync.log"
 
 mkdir -p "$(dirname "$LOG")"
 
 cd "$VAULT"
 
+# Timestamp
 ts=$(date '+%Y-%m-%d %H:%M:%S')
 
 # 1. Pull remote changes
@@ -21,6 +22,7 @@ fi
 
 # 2. Check for local changes
 if [ -z "$(git status --porcelain)" ]; then
+    # Nothing to commit — silent exit (don't spam the log)
     exit 0
 fi
 

@@ -1,5 +1,11 @@
 # Claude Server Kit
 
+[![CI](https://github.com/doffskiii/claude-server-kit/actions/workflows/test-setup.yml/badge.svg)](https://github.com/doffskiii/claude-server-kit/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-6e1cff.svg)](LICENSE)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-compatible-6e1cff.svg)](https://claude.ai)
+
+> **TL;DR для агентов:** `git clone https://github.com/doffskiii/claude-server-kit.git && cd claude-server-kit && bash setup.sh && bash configure.sh && claude`
+
 Превращаем VPS в персонального AI-ассистента с памятью, Telegram-ботом и кучей суперсил.
 
 Две недели ежедневных итераций, упакованные в один репозиторий. Клонишь, запускаешь `setup.sh`, и получаешь агента, который помнит всё, управляет задачами, расшифровывает голосовые и общается с тобой в Telegram.
@@ -7,6 +13,27 @@
 > Подробная серия постов, где разобран каждый компонент: [Курс молодого AI билдера](https://t.me/yshlfe/264)
 
 ![Architecture](docs/images/architecture.png)
+
+---
+
+## Оглавление
+
+- [Чо внутри](#чо-внутри)
+- [Быстрый старт](#быстрый-старт)
+- [Что нужно для запуска](#что-нужно-для-запуска)
+- [Настройка кредов](#настройка-кредов)
+- [Структура репозитория](#структура-репозитория)
+- [Brain MCP — 20 инструментов](#brain-mcp--20-инструментов)
+- [Takopi (Telegram-бот)](#takopi-telegram-бот)
+- [Конвенции хранилища](#конвенции-хранилища)
+- [Под капотом](#под-капотом)
+- [Создание скиллов](#создание-скиллов)
+- [Авто-память](#авто-память)
+- [Мониторинг](#мониторинг)
+- [Бэкапы](#бэкапы)
+- [Библиотекарь](#библиотекарь)
+
+---
 
 ## Чо внутри
 
@@ -77,7 +104,8 @@ echo 'your-passphrase' > ~/.backup-passphrase && chmod 600 ~/.backup-passphrase
 
 Все чувствительные файлы — `chmod 600` и в `.gitignore`.
 
-## Структура репозитория
+<details>
+<summary><b>Структура репозитория</b></summary>
 
 ```
 claude-server-kit/
@@ -128,7 +156,10 @@ claude-server-kit/
 └── .gitignore
 ```
 
-## Brain MCP — 20 инструментов
+</details>
+
+<details>
+<summary><b>Brain MCP — 20 инструментов</b></summary>
 
 **Хранилище:** `search_vault` (полнотекстовый поиск) / `semantic_search` (поиск по смыслу) / `read_vault` / `write_vault` (с авто-мета и git-синком) / `list_vault` / `update_dashboard` (безопасное обновление, никогда не перезаписывает)
 
@@ -139,6 +170,8 @@ claude-server-kit/
 **Telegram:** `send_telegram_question` (неблокирующий) / `check_telegram_answer` (поллинг) / `cancel_telegram_question` / `ask_via_telegram` (блокирующий, legacy)
 
 **Сервер:** `get_server_status` (CPU/RAM/диск/PM2) / `get_server_map` (карта сервисов)
+
+</details>
 
 ## Takopi (Telegram-бот)
 
@@ -160,7 +193,8 @@ claude-server-kit/
 - **Записи сессий** — после работы в VS Code записываем в `conversations/YYYY-MM-DD_slug.md`
 - **Граница дня в 03:00** — для полуночников: логический день заканчивается в 3 утра, не в полночь
 
-## Под капотом
+<details>
+<summary><b>Под капотом</b></summary>
 
 **Debounced Git Sync** — несколько записей за 30 секунд собираются в один коммит. Fire-and-forget, не блокирует ответ.
 
@@ -173,6 +207,8 @@ claude-server-kit/
 **Эскалирующие напоминалки** — 4 уровня: подробная статистика -> простой тычок -> последний шанс -> авто-выполнение. Маркер-файлы предотвращают повторный запуск.
 
 **Безопасность путей** — все vault-пути валидируются от directory traversal и symlink-атак. `.env`, `.ssh`, токены заблокированы от ингеста.
+
+</details>
 
 ## Создание скиллов
 
@@ -221,13 +257,16 @@ Brain Monitor (PM2 демон) шлёт алерты в Telegram когда:
 
 Крон: `0 4 * * 1 bash ~/librarian/run.sh` (понедельник, 4 утра).
 
-## Environment Variables
+<details>
+<summary><b>Environment Variables</b></summary>
 
 | Переменная | По умолчанию | Описание |
 |------------|-------------|----------|
 | `BRAIN_VAULT_PATH` | `~/vault` | Путь к Obsidian хранилищу |
 | `TAKOPI_CONFIG` | `~/.takopi/takopi.toml` | Конфиг Takopi |
 | `GROQ_KEY_FILE` | `~/.groq-api-key.json` | API ключ Groq для длинных аудио |
+
+</details>
 
 ## Credits
 
@@ -240,3 +279,7 @@ Brain Monitor (PM2 демон) шлёт алерты в Telegram когда:
 ## License
 
 MIT
+
+---
+
+Понравилось? Поставь звёздочку — это помогает другим найти проект!

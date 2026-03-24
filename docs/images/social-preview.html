@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1280px;
+    height: 640px;
+    background: #0d0b1a;
+    color: #f3f4f6;
+    font-family: 'Inter', sans-serif;
+    display: flex;
+    overflow: hidden;
+    position: relative;
+  }
+  .glow1 {
+    position: absolute;
+    top: -100px;
+    right: -50px;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(110,28,255,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .glow2 {
+    position: absolute;
+    bottom: -100px;
+    left: 100px;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(110,28,255,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .left {
+    flex: 1;
+    padding: 60px 70px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
+  }
+  .tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #6e1cff;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .tag::before {
+    content: '';
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    background: #6e1cff;
+  }
+  h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 72px;
+    font-weight: 900;
+    line-height: 0.95;
+    letter-spacing: -2px;
+    margin-bottom: 24px;
+  }
+  h1 span { color: #6e1cff; }
+  .subtitle {
+    font-size: 22px;
+    color: #b8b0d0;
+    line-height: 1.5;
+    max-width: 500px;
+  }
+  .right {
+    width: 400px;
+    border-left: 2px solid #3b3659;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 60px 50px;
+    position: relative;
+    z-index: 1;
+  }
+  .feature {
+    padding: 16px 0;
+    border-bottom: 1px solid #3b3659;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .feature:last-child { border-bottom: none; }
+  .feature .dot {
+    width: 8px;
+    height: 8px;
+    background: #6e1cff;
+    flex-shrink: 0;
+  }
+  .feature span {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: #f3f4f6;
+    letter-spacing: 0.5px;
+  }
+  .author {
+    position: absolute;
+    bottom: 40px;
+    left: 70px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    z-index: 2;
+  }
+  .author img {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid #6e1cff;
+  }
+  .author a {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    font-weight: 700;
+    color: #6e1cff;
+    text-decoration: none;
+  }
+</style>
+</head>
+<body>
+  <div class="glow1"></div>
+  <div class="glow2"></div>
+  <div class="left">
+    <div class="tag">Open Source Kit</div>
+    <h1>Claude<br>Server Kit<span>.</span></h1>
+    <p class="subtitle">VPS + Claude Code = персональный AI-ассистент с памятью, Telegram-ботом и 20 инструментами</p>
+  </div>
+  <div class="right">
+    <div class="feature"><div class="dot"></div><span>Brain MCP (20 tools)</span></div>
+    <div class="feature"><div class="dot"></div><span>Obsidian Vault</span></div>
+    <div class="feature"><div class="dot"></div><span>Semantic Search</span></div>
+    <div class="feature"><div class="dot"></div><span>Telegram Bot</span></div>
+    <div class="feature"><div class="dot"></div><span>Voice Transcription</span></div>
+    <div class="feature"><div class="dot"></div><span>Auto Onboarding</span></div>
+    <div class="feature"><div class="dot"></div><span>Vault Librarian</span></div>
+    <div class="feature"><div class="dot"></div><span>Encrypted Backups</span></div>
+  </div>
+  <div class="author">
+    <img src="avatar.jpg" alt="Yash" />
+    <a href="https://t.me/yshlfe">by t.me/yshlfe</a>
+  </div>
+</body>
+</html>

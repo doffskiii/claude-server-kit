@@ -91,7 +91,7 @@ jobs:
         run: |
           sudo bash -c '
           cd /root/brain
-          /root/.local/bin/uv run python -c "from brain.whisper_server import app; print(\"Whisper server OK\")"
+          /root/.local/bin/uv run python -c "from brain.whisper_server import main; print(\"Whisper server OK\")"
           '
 
       - name: Summary

@@ -16,91 +16,92 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run setup.sh
-        run: |
-          sudo bash setup.sh 2>&1
+        run: sudo bash setup.sh
         env:
           DEBIAN_FRONTEND: noninteractive
 
-      - name: Verify uv installed
+      - name: Verify installation
         run: |
-          /root/.local/bin/uv --version || ~/.local/bin/uv --version
+          sudo bash -c '
+          set -e
+          echo "=== Checking uv ==="
+          /root/.local/bin/uv --version
 
-      - name: Verify Node.js installed
-        run: node --version
+          echo "=== Checking Node.js ==="
+          node --version
 
-      - name: Verify PM2 installed
-        run: pm2 --version
+          echo "=== Checking PM2 ==="
+          pm2 --version
 
-      - name: Verify Brain MCP directory
+          echo "=== Checking Brain MCP ==="
+          test -f /root/brain/src/brain/server.py
+          test -f /root/brain/pyproject.toml
+
+          echo "=== Checking vault structure ==="
+          test -f /root/vault/dashboard.md
+          test -f /root/vault/inbox/INBOX.md
+          test -f /root/vault/conversations/CONVERSATIONS.md
+          test -f /root/vault/decisions/DECISIONS.md
+          test -f /root/vault/knowledge/personal/PERSONAL.md
+          test -f /root/vault/knowledge/projects/PROJECTS.md
+          test -d /root/vault/.git
+
+          echo "=== Checking CLAUDE.md ==="
+          test -f /root/CLAUDE.md
+          grep -q "YOUR_NAME" /root/CLAUDE.md
+
+          echo "=== Checking MCP config ==="
+          test -f /root/.mcp.json
+          grep -q "brain" /root/.mcp.json
+          grep -q "context7" /root/.mcp.json
+
+          echo "=== Checking settings.json ==="
+          test -f /root/.claude/settings.json
+          grep -q "mcp__brain__" /root/.claude/settings.json
+          grep -q "mcp__context7__" /root/.claude/settings.json
+
+          echo "=== Checking onboarding skill ==="
+          test -f /root/.claude/skills/onboarding/SKILL.md
+          grep -q "Step 0" /root/.claude/skills/onboarding/SKILL.md
+          grep -q "Step 11" /root/.claude/skills/onboarding/SKILL.md
+
+          echo "=== Checking memory template ==="
+          test -f /root/.claude/projects/-root/memory/MEMORY.md
+
+          echo "=== Checking librarian ==="
+          test -f /root/librarian/SYSTEM.md
+          test -f /root/librarian/CHECKLIST.md
+          test -f /root/librarian/run.sh
+
+          echo "=== Checking scripts ==="
+          test -f /root/scripts/backup.sh
+          test -f /root/scripts/reminders/reminder.sh
+
+          echo "=== All file checks passed ==="
+          '
+
+      - name: Verify Brain imports
         run: |
-          test -d ~/brain/src/brain/
-          test -f ~/brain/src/brain/server.py
-          test -f ~/brain/pyproject.toml
+          sudo bash -c '
+          cd /root/brain
+          /root/.local/bin/uv run python -c "from brain.server import mcp; print(f\"Brain loaded: {len(mcp._tools)} tools\")"
+          '
 
-      - name: Verify vault structure
+      - name: Verify Whisper server imports
         run: |
-          test -f ~/vault/dashboard.md
-          test -f ~/vault/inbox/INBOX.md
-          test -f ~/vault/conversations/CONVERSATIONS.md
-          test -f ~/vault/decisions/DECISIONS.md
-          test -f ~/vault/knowledge/personal/PERSONAL.md
-          test -f ~/vault/knowledge/projects/PROJECTS.md
-          test -d ~/vault/.git
-
-      - name: Verify CLAUDE.md template
-        run: |
-          test -f ~/CLAUDE.md
-          grep -q "YOUR_NAME" ~/CLAUDE.md
-
-      - name: Verify MCP config
-        run: |
-          test -f ~/.mcp.json
-          grep -q "brain" ~/.mcp.json
-          grep -q "context7" ~/.mcp.json
-
-      - name: Verify settings.json
-        run: |
-          test -f ~/.claude/settings.json
-          grep -q "mcp__brain__" ~/.claude/settings.json
-          grep -q "mcp__context7__" ~/.claude/settings.json
-
-      - name: Verify onboarding skill
-        run: |
-          test -f ~/.claude/skills/onboarding/SKILL.md
-          grep -q "Step 0" ~/.claude/skills/onboarding/SKILL.md
-          grep -q "Step 11" ~/.claude/skills/onboarding/SKILL.md
-
-      - name: Verify memory template
-        run: |
-          test -f ~/.claude/projects/-root/memory/MEMORY.md
-
-      - name: Verify Brain can import
-        run: |
-          cd ~/brain
-          ~/.local/bin/uv run python -c "from brain.server import mcp; print(f'Brain loaded: {len(mcp._tools)} tools')"
-
-      - name: Verify Whisper server can import
-        run: |
-          cd ~/brain
-          ~/.local/bin/uv run python -c "from brain.whisper_server import app; print('Whisper server OK')"
-
-      - name: Verify librarian
-        run: |
-          test -f ~/librarian/SYSTEM.md
-          test -f ~/librarian/CHECKLIST.md
-          test -f ~/librarian/run.sh
-
-      - name: Verify scripts
-        run: |
-          test -f ~/scripts/backup.sh
-          test -f ~/scripts/reminders/reminder.sh
+          sudo bash -c '
+          cd /root/brain
+          /root/.local/bin/uv run python -c "from brain.whisper_server import app; print(\"Whisper server OK\")"
+          '
 
       - name: Summary
         run: |
+          sudo bash -c '
           echo "=== Setup Test Complete ==="
-          echo "uv: $(~/.local/bin/uv --version 2>/dev/null || echo 'N/A')"
-          echo "node: $(node --version 2>/dev/null || echo 'N/A')"
-          echo "pm2: $(pm2 --version 2>/dev/null || echo 'N/A')"
-          echo "vault files: $(find ~/vault -name '*.md' | wc -l)"
-          echo "brain tools: $(cd ~/brain && ~/.local/bin/uv run python -c 'from brain.server import mcp; print(len(mcp._tools))' 2>/dev/null || echo 'N/A')"
+          echo "uv: $(/root/.local/bin/uv --version)"
+          echo "node: $(node --version)"
+          echo "pm2: $(pm2 --version)"
+          echo "vault files: $(find /root/vault -name "*.md" | wc -l)"
+          echo "brain tools: $(cd /root/brain && /root/.local/bin/uv run python -c "from brain.server import mcp; print(len(mcp._tools))")"
           echo "==========================="
+          '
